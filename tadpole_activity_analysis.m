@@ -104,17 +104,20 @@ function tadpole_activity_analysis(varargin)
             uicontrol(fig,'Parent',p2,'Style','text','String',sprintf('Movement AUC: %g',movement_AUC),'Position',[785 0 100 35]);
             uicontrol(fig,'Parent',p2,'Style','pushbutton','String','Save Data','Position',[885 10 100 20],'Callback',@callback__save_data_button_pushed);
 
-            uicontrol(fig,'Parent',p2,'Style','text','String','Start/End','Position',[985 10 65 20]);
-            uicontrol(fig,'Parent',p2,'Style','edit','String',analysis_startstop.start,'Position',[1050 10 50 20],'Callback',@callback__start_time_changed);
-            uicontrol(fig,'Parent',p2,'Style','edit','String',analysis_startstop.stop,'Position',[1100 10 50 20],'Callback',@callback__stop_time_changed);
+            uicontrol(fig,'Parent',p2,'Style','text','String','Start/End Time:','Position',[1000 10 75 20]);
+            uicontrol(fig,'Parent',p2,'Style','edit','String',analysis_startstop.start,'Position',[1075 10 50 20],'Callback',@callback__start_time_changed);
+            uicontrol(fig,'Parent',p2,'Style','edit','String',analysis_startstop.stop,'Position',[1125 10 50 20],'Callback',@callback__stop_time_changed);
             
             uicontrol(fig,'Style','pushbutton','String','Start Playback','Position',[1075 380 200 20],'Callback',@callback__start_playback_button_pushed);
         end
     end%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function callback__start_time_changed(h,~)
-        analysis_startstop.start = h.String;
+        analysis_startstop.start = str2double(h.String);
+        fprintf('callback__start_time_changed(%g)\n',analysis_startstop.start)
     end%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    function callback__stop_time_changed(~,~)
+    function callback__stop_time_changed(h,~)
+        analysis_startstop.stop = str2double(h.String);
+        fprintf('callback__stop_time_changed(%g)\n',analysis_startstop.stop)
     end%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function callback__start_playback_button_pushed(~,~)
         run_analysis__draw() %HERE
@@ -382,23 +385,30 @@ function tadpole_activity_analysis(varargin)
         %%%%%
         smoothed_chng_v_time = smooth(chng_v_time,param_window_size);
         movement_detected = zeros(size(smoothed_chng_v_time));
-
+        %%%%%
         for i=1:size(smoothed_chng_v_time)-analysis.wnsz_x
-          variation =  max(smoothed_chng_v_time(i:i+analysis.wnsz_x)) - min(smoothed_chng_v_time(i:i+analysis.wnsz_x));
-          if variation > analysis.threshold
-              movement_detected(i) = variation;
-          end
-
+            if analysis_startstop.start > time_v_time(i)
+                continue;
+            elseif analysis_startstop.stop < time_v_time(i)
+                continue;
+            end
+            variation =  max(smoothed_chng_v_time(i:i+analysis.wnsz_x)) - min(smoothed_chng_v_time(i:i+analysis.wnsz_x));
+            if variation > analysis.threshold
+                movement_detected(i) = variation;
+            end
         end
+        %%%%%
         hold on
         yl = ylim();
         if analysis_startstop.start > 0
-            bar(analysis_startstop.start/2,yl(2),analysis_startstop.start,'FaceColor',[0,0.7,0.7],'FaceAlpha',0.2)
+            fprintf('start: bar(%g,%g,%g)\n',analysis_startstop.start/2,yl(2),analysis_startstop.start)
+            bar(analysis_startstop.start/2,yl(2),analysis_startstop.start,'FaceColor',[0.7,0,0],'FaceAlpha',0.2)
         end
         plot(time_v_time,movement_detected,'-g')
         if analysis_startstop.stop < time_v_time(end)
             w = time_v_time(end) - analysis_startstop.stop;
-            bar(time_v_time(end) - w/2,yl(2),w,'FaceColor',[0,0.7,0.7],'FaceAlpha',0.2)
+            fprintf('stop: bar(%g,%g,%g)\n',time_v_time(end) - w/2,yl(2),w)
+            bar(time_v_time(end) - w/2,yl(2),w,'FaceColor',[0.7,0,0],'FaceAlpha',0.2)
         end
         hold off
         %%%%%%
