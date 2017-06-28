@@ -3,7 +3,14 @@
 function tadpole_activity_analysis(varargin)
     close all;
     %filename = '/Users/brian/Desktop/tadpole_activity_video/DSCF0001.AVI';
-    filename = uigetfile('*.avi;*.AVI','Select Video File','MultiSelect', 'off');
+    %filename = uigetfile('*.avi;*.AVI','Select Video File','MultiSelect', 'off');
+    [fpart, ppart, filterindex] = uigetfile('*.avi;*.AVI','Select Video File','MultiSelect', 'off');
+    if filterindex == 0
+        return
+    end
+    filename = fullfile(ppart,fpart);
+    fprintf('filename = %s\n',filename)
+    
     chng_v_time = [];
     time_v_time = [];
     param_window_size = 15;
@@ -28,6 +35,7 @@ function tadpole_activity_analysis(varargin)
     total_movement_time = '';
     movement_AUC = '';
     analysis_startstop = struct('start',0,'stop',0);
+    screen_size = [];
     
     
     % Run
@@ -36,26 +44,35 @@ function tadpole_activity_analysis(varargin)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function get_cropping_rect()
         fprintf('Get cropping rectangle\n')
+        set(0,'DefaultFigureVisible','off');
         fig=figure(1);clf;set(fig,'MenuBar','none');
         v =  VideoReader(filename);
         f = readFrame(v);
-        imshow(f)
-        cur_pos = get(fig,'Position');
-        set(fig,'Position',[ 31 31 cur_pos(3) cur_pos(4)]);
+        imh = imshow(f);
+        %screen_size = get(0,'screensize');
+        screen_size = [1,1, 1366, 768]; 
+        set(fig,'Position',[1,55,screen_size(3),screen_size(4)-99])        
+        hsp = imscrollpanel(fig,imh);
+        set(hsp,'Units','normalized','Position',[0 0 1 1])
+        set(fig,'Visible','on')
+  
         uiwait(msgbox('Draw rectangle around area to analyze'))
-        crop_rect = getrect;
+        crop_rect = floor(getrect);
         circ_bounds.x = 0;
         circ_bounds.y = 0;
         circ_bounds.h = crop_rect(3);
         circ_bounds.w = crop_rect(4);
-        %fprintf('\t%g\n',crop_rect)
+        fprintf('\t%g\n',crop_rect)
         initialize_analysis_window()
     end
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                
     function draw_play_button()
-        uicontrol(fig,'Style','pushbutton','String','Start Processing','Position',[150 380 200 20],'Callback',@callback__play_button_pushed);
-        uicontrol(fig,'Style','pushbutton','String','Reset Processing','Position',[350 380 200 20],'Callback',@callback__reset_button_pushed);
-        uicontrol(fig,'Style','pushbutton','String','Select New Region','Position',[150 750 200 20],'Callback',@callback__start_over_button_pushed);
+        p0 = uipanel('Position',[0.05 0.95 0.25 0.05],'BorderType','none');
+        uicontrol(fig,'Parent',p0,'Style','pushbutton','String','Select New Region','Position',[0 0 200 20],'Callback',@callback__start_over_button_pushed);
+        
+        p1 = uipanel('Position',[0.05 0.465 0.35 0.05],'BorderType','none');
+        uicontrol(fig,'Parent',p1,'Style','pushbutton','String','Start Processing','Position',[0 10 200 20],'Callback',@callback__play_button_pushed);
+        uicontrol(fig,'Parent',p1,'Style','pushbutton','String','Reset Processing','Position',[200 10 200 20],'Callback',@callback__reset_button_pushed);
 
         %uicontrol(fig,'Style','text','String','Adjust Blue Clipping Region','Position',[800 400 200 20]);
         panel = uipanel('Title','Adjust Blue Clipping Region','FontSize',12,...
@@ -75,24 +92,9 @@ function tadpole_activity_analysis(varargin)
         uicontrol(fig,'Parent',panel,'Style','text','String',sprintf('dx: %g',step_delta),'Position',[250 10 40 20]);
         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','^','Position',[290 10 20 20],'Callback',@callback__step_delta_inc_button_pushed);
         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','v','Position',[310 10 20 20],'Callback',@callback__step_delta_dec_button_pushed);
-
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','<','Position',[820 380 20 20],'Callback',@callback__X_dec_button_pushed);
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','>','Position',[840 380 20 20],'Callback',@callback__X_inc_button_pushed);
-%         uicontrol(fig,'Parent',panel,'Style','text','String','Y','Position',[860 380 20 20]);
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','^','Position',[880 380 20 20],'Callback',@callback__Y_inc_button_pushed);
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','v','Position',[900 380 20 20],'Callback',@callback__Y_dec_button_pushed);
-%         uicontrol(fig,'Parent',panel,'Style','text','String','W','Position',[920 380 20 20]);
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','<','Position',[940 380 20 20],'Callback',@callback__W_dec_button_pushed);
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','>','Position',[960 380 20 20],'Callback',@callback__W_inc_button_pushed);
-%         uicontrol(fig,'Parent',panel,'Style','text','String','H','Position',[980 380 20 20]);
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','^','Position',[1000 380 20 20],'Callback',@callback__H_inc_button_pushed);
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','v','Position',[1020 380 20 20],'Callback',@callback__H_dec_button_pushed);
-%         uicontrol(fig,'Parent',panel,'Style','text','String',sprintf('dx: %g',step_delta),'Position',[1050 380 40 20]);
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','^','Position',[1090 380 20 20],'Callback',@callback__step_delta_inc_button_pushed);
-%         uicontrol(fig,'Parent',panel,'Style','pushbutton','String','v','Position',[1110 380 20 20],'Callback',@callback__step_delta_dec_button_pushed);
         
         if frameObj.ndx > 0
-            p2 = uipanel('Position',[0.08 0.03 0.84 0.055]);
+            p2 = uipanel('Position',[0.05 0.03 0.9 0.055]);
             uicontrol(fig,'Parent',p2,'Style','pushbutton','String','Analyze Movement','Position',[10 10 100 20],'Callback',@callback__analyze_movement_button_pushed);
             uicontrol(fig,'Parent',p2,'Style','text','String',sprintf('Smooth (red): %g',param_window_size),'Position',[125 10 90 20]);
             uicontrol(fig,'Parent',p2,'Style','slider','Min',1,'Max',50,'Value',param_window_size,'Position', [215 10 100 20],'Callback', @callback__slider_smooth_button_pushed); 
@@ -108,7 +110,8 @@ function tadpole_activity_analysis(varargin)
             uicontrol(fig,'Parent',p2,'Style','edit','String',analysis_startstop.start,'Position',[1075 10 50 20],'Callback',@callback__start_time_changed);
             uicontrol(fig,'Parent',p2,'Style','edit','String',analysis_startstop.stop,'Position',[1125 10 50 20],'Callback',@callback__stop_time_changed);
             
-            uicontrol(fig,'Style','pushbutton','String','Start Playback','Position',[1075 380 200 20],'Callback',@callback__start_playback_button_pushed);
+            p3 = uipanel('Position',[0.7 0.465 0.25 0.05],'BorderType','none');
+            uicontrol(fig,'Parent',p3,'Style','pushbutton','String','Start Playback','Position',[0 10 200 20],'Callback',@callback__start_playback_button_pushed);
         end
     end%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function callback__start_time_changed(h,~)
@@ -152,11 +155,13 @@ function tadpole_activity_analysis(varargin)
         run_analysis__analyze_movement__draw()
     end%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function draw_stop_playback_button()
-        uicontrol(fig,'Style','pushbutton','String','Stop Playback','Position',[150 380 200 20],'Callback',@callback__stop_playback_button_pushed);   
+        p1 = uipanel('Position',[0.05 0.465 0.35 0.05],'BorderType','none');
+        uicontrol(fig,'Parent',p1,'Style','pushbutton','String','Stop Playback','Position',[0 10 200 20],'Callback',@callback__stop_playback_button_pushed);   
     end%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function draw_stop_button()
-        uicontrol(fig,'Style','pushbutton','String','Pause Processing','Position',[150 380 200 20],'Callback',@callback__stop_button_pushed);   
-        uicontrol(fig,'Style','pushbutton','String','FF Processing to End','Position',[350 380 200 20],'Callback',@callback__FF_processing_button_pushed);   
+        p1 = uipanel('Position',[0.05 0.465 0.35 0.05],'BorderType','none');
+        uicontrol(fig,'Parent',p1,'Style','pushbutton','String','Pause Processing','Position',[0 10 200 20],'Callback',@callback__stop_button_pushed);   
+        uicontrol(fig,'Parent',p1,'Style','pushbutton','String','FF Processing to End','Position',[200 10 200 20],'Callback',@callback__FF_processing_button_pushed);   
     end%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function callback__analyze_movement_button_pushed(~,~)
         run_analysis__analyze_movement__draw()
@@ -304,6 +309,7 @@ function tadpole_activity_analysis(varargin)
         VidPlayBackObj =  VideoReader(filename,'CurrentTime',start_time);
         fprintf('initializing playback to %g (start_time=%g)\n',VidPlayBackObj.CurrentTime,start_time)
         PlaybackFrameObj.d = zeros(crop_rect(4)+1,crop_rect(3)+1);
+        PlaybackFrameObj.ndx = 0;
     end
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function initialize_analysis()
@@ -343,7 +349,7 @@ function tadpole_activity_analysis(varargin)
         frameObj.last_frame = frameObj.f5;
         return
     end    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                
-     function success = run_playback__read_frame()
+    function success = run_playback__read_frame()
         try
             PlaybackFrameObj.f = readFrame(VidPlayBackObj);
         catch
