@@ -49,8 +49,7 @@ function tadpole_activity_analysis(varargin)
         v =  VideoReader(filename);
         f = readFrame(v);
         imh = imshow(f);
-        %screen_size = get(0,'screensize');
-        screen_size = [1,1, 1366, 768]; 
+        screen_size = get(0,'screensize');
         set(fig,'Position',[1,55,screen_size(3),screen_size(4)-99])        
         hsp = imscrollpanel(fig,imh);
         set(hsp,'Units','normalized','Position',[0 0 1 1])
