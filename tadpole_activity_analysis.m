@@ -43,7 +43,6 @@ function tadpole_activity_analysis(varargin)
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function get_cropping_rect()
-        fprintf('Get cropping rectangle\n')
         set(0,'DefaultFigureVisible','off');
         fig=figure(1);clf;set(fig,'MenuBar','none');
         v =  VideoReader(filename);
@@ -55,14 +54,63 @@ function tadpole_activity_analysis(varargin)
         set(hsp,'Units','normalized','Position',[0 0 1 1])
         set(fig,'Visible','on')
   
-        uiwait(msgbox('Draw rectangle around area to analyze'))
-        crop_rect = floor(getrect);
-        circ_bounds.x = 0;
-        circ_bounds.y = 0;
-        circ_bounds.h = crop_rect(3);
-        circ_bounds.w = crop_rect(4);
-        fprintf('\t%g\n',crop_rect)
-        initialize_analysis_window()
+        %uiwait(msgbox('Draw rectangle around area to analyze'))
+        choice = questdlg('Draw rectangle around area to analyze', ...
+            'Tadpole Activity Analysis', ...
+            'Ok','Load Data','Ok');
+        % Handle response
+        switch choice
+            case 'Ok'
+                fprintf('Get cropping rectangle\n')
+                crop_rect = floor(getrect);
+                circ_bounds.x = 0;
+                circ_bounds.y = 0;
+                circ_bounds.h = crop_rect(3);
+                circ_bounds.w = crop_rect(4);
+                fprintf('\t%g\n',crop_rect)
+                initialize_analysis_window()
+            case 'Load Data'
+                load_data_file()
+                %initialize_analysis_window()
+                VidObj =  VideoReader(filename,'CurrentTime',time_v_time(end));
+                run_analysis__read_frame();
+                frameObj.ndx = length(time_v_time);
+                frameObj.d = zeros(crop_rect(4)+1,crop_rect(3)+1);
+                run_analysis__draw()
+                draw_play_button()
+        end
+    end
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    function load_data_file()
+        [fpart, ppart, filterindex] = uigetfile('*.mat','Select Data File','MultiSelect', 'off');
+        if filterindex == 0
+            return
+        end
+        data_filename = fullfile(ppart,fpart);
+        fprintf('data_filename = %s\n',data_filename)
+        s = load(data_filename);
+        if s.filename ~= filename
+            error('Filenames do not match.  This saved data file can not be used with this video file')
+        end
+        crop_rect = s.crop_rect;
+        chng_v_time = s.chng_v_time;
+        time_v_time = s.time_v_time;
+        movement_detected = s.movement_detected;
+        total_movement_time = s.total_movement_time;
+        movement_AUC = s.movement_AUC;
+        if isfield(s,'circ_bounds')
+            circ_bounds = s.circ_bounds;
+        else
+            circ_bounds.x = 0;
+            circ_bounds.y = 0;
+            circ_bounds.h = crop_rect(3);
+            circ_bounds.w = crop_rect(4);
+        end
+        if isfield(s,'analysis_startstop')
+            analysis_startstop = s.analysis_startstop;
+        else
+            analysis_startstop = struct('start',0,'stop',0);
+        end
     end
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                
     function draw_play_button()
@@ -178,6 +226,8 @@ function tadpole_activity_analysis(varargin)
             s.smoothed_chng_v_time = smooth(chng_v_time,param_window_size); 
             s.movement_detected = movement_detected;
             s.total_movement_time = total_movement_time;
+            s.circ_bounds = circ_bounds;
+            s.analysis_startstop = analysis_startstop;
             s.movement_AUC = movement_AUC;                      %#ok<STRNU>
             save(savefile,'-STRUCT','s');
         end
@@ -340,8 +390,22 @@ function tadpole_activity_analysis(varargin)
             frameObj.d = frameObj.last_frame-frameObj.f5;
             frameObj.d(circle_mask) = 0;
             chng = nnz(frameObj.d);
+            % if frame is the same, read the next frame.
             if chng == 0
-                return
+                try
+                    frameObj.f = readFrame(VidObj);
+                catch
+                    warning('Unexpected End of file'); 
+                    success = 0;
+                    return
+                end
+                frameObj.f2 = frameObj.f(crop_rect(2):(crop_rect(2)+crop_rect(4)),crop_rect(1):(crop_rect(1)+crop_rect(3)),:);
+                frameObj.f3 = rgb2gray(frameObj.f2);
+                frameObj.f4 = imcomplement(frameObj.f3);
+                frameObj.f5 = frameObj.f4;
+                frameObj.f5(frameObj.f5<200) = 0;
+                frameObj.d = frameObj.last_frame-frameObj.f5;
+                frameObj.d(circle_mask) = 0;
             end
         end
         frameObj.ndx = frameObj.ndx + 1;
@@ -368,9 +432,9 @@ function tadpole_activity_analysis(varargin)
             PlaybackFrameObj.d = PlaybackFrameObj.last_frame-PlaybackFrameObj.f5;
             PlaybackFrameObj.d(circle_mask) = 0;
             chng = nnz(PlaybackFrameObj.d);
-            if chng == 0
-                return
-            end
+            %if chng == 0
+            %    return
+            %end
         end
         PlaybackFrameObj.ndx = PlaybackFrameObj.ndx + 1;
         PlaybackFrameObj.last_frame = PlaybackFrameObj.f5;
@@ -479,7 +543,11 @@ function tadpole_activity_analysis(varargin)
         last_reported_precent = 0;
         while processing_continue && hasFrame(VidObj)
             if VidObj.CurrentTime/VidObj.Duration*100 > last_reported_precent
-                fprintf('Progress %g%%\n',floor(VidObj.CurrentTime/VidObj.Duration*100))
+                if ~isempty(time_v_time)
+                    fprintf('Progress %g%%\t\t vid:%g rec:%g ndx=%g\n',floor(VidObj.CurrentTime/VidObj.Duration*100),VidObj.CurrentTime, time_v_time(end),frameObj.ndx)
+                else
+                    fprintf('Progress %g%%\t\t vid:%g rec:%g ndx=%g\n',floor(VidObj.CurrentTime/VidObj.Duration*100),VidObj.CurrentTime, 0,frameObj.ndx)
+                end
                 last_reported_precent = last_reported_precent + 1;
             end
             
@@ -489,9 +557,9 @@ function tadpole_activity_analysis(varargin)
             end
             if frameObj.ndx>1
                 chng = nnz(frameObj.d);
-                if chng == 0
-                    continue
-                end
+                %if chng == 0
+                %    continue
+                %end
                 %fprintf('t=%i\t\tchange=%i\n',frameObj.ndx,chng)
                 chng_v_time(frameObj.ndx) = chng;
                 time_v_time(frameObj.ndx) = VidObj.CurrentTime;
@@ -502,25 +570,6 @@ function tadpole_activity_analysis(varargin)
                     %draw_stop_button()
                 end
             end
-%             if frameObj.ndx>0
-%                 frameObj.d = frameObj.last_frame-frameObj.f5;
-%                 frameObj.d(circle_mask) = 0;
-%                 chng = nnz(frameObj.d);
-%                 if chng == 0
-%                     continue
-%                 end
-%                 %fprintf('t=%i\t\tchange=%i\n',frameObj.ndx,chng)
-%                 chng_v_time(frameObj.ndx) = chng;
-%                 time_v_time(frameObj.ndx) = VidObj.CurrentTime;
-% 
-%                 if show_plots
-%                     run_analysis__plot()
-%                     %draw_stop_button()
-%                 end
-%             end
-%             frameObj.last_frame = frameObj.f5;
-%             frameObj.ndx = frameObj.ndx + 1;
-
         end
         run_analysis__plot()
         draw_play_button()
