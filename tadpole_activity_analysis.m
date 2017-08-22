@@ -42,6 +42,167 @@ function tadpole_activity_analysis(varargin)
     get_cropping_rect()
 
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     function get_volume_measurement__reset()
+%         run_analysis__draw()
+%         draw_play_button()
+%     end
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    function get_volume_measurement__step1()
+        set(0,'DefaultFigureVisible','off');
+        fig=figure(1);clf;set(fig,'MenuBar','none');
+        plot_circle(frameObj)
+        screen_size = get(0,'screensize');
+        set(fig,'Position',[1,55,screen_size(3),screen_size(4)-99])        
+        set(fig,'Visible','on')
+        vol_crop_rect = floor(getrect);
+        fprintf('\tvol_crop_rect: %g\n',vol_crop_rect)
+        get_volume_measurement__step2(vol_crop_rect)
+    end
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    function get_volume_measurement__step2(vol_crop_rect)
+        set(0,'DefaultFigureVisible','off');
+        fig=figure(1);clf;set(fig,'MenuBar','none');
+        img = frameObj.f5(vol_crop_rect(2):(vol_crop_rect(2)+vol_crop_rect(4)),vol_crop_rect(1):(vol_crop_rect(1)+vol_crop_rect(3)),:);
+        imshow(img)
+        screen_size = get(0,'screensize');
+        set(fig,'Position',[1,55,screen_size(3),screen_size(4)-99])        
+        set(fig,'Visible','on')
+        
+        %uiwait(msgbox('Draw a line clicking on "snout" and then "vent", then hit return.  If you click an extra time, hit delete.'))
+        snout_to_vent_length = inputdlg('Enter the "snout" to "vent" length measurment here, and Click OK.  Next draw a line clicking on "snout" and then "vent", then hit return.');
+        
+        if ~isempty(snout_to_vent_length)
+            
+            snout_to_vent_length = str2num(cell2mat(snout_to_vent_length(1)));
+            keep_going=1;
+            while(keep_going)
+                [x,y] = getline(fig);
+                fprintf('getline: x,y = %g %g\n',x,y)
+                if length(x) == 2
+                    keep_going=0;
+                else
+                    uiwait(msgbox('Wrong number of points clicked for the line.  Please try again.  Click twice, then hit the return key.'))
+                end
+            end
+
+            line_length = sqrt((x(2)-x(1))^2 + (y(2)-y(1))^2);
+            
+            area_px2 = nnz(img);
+            area_mm2 = area_px2 * (snout_to_vent_length/line_length) * (snout_to_vent_length/line_length);
+
+            %uiwait(msgbox(sprintf('Snout to Vent length=%g (mm)\n\nLine length=%g (pixels)\n\ncross-sectional area=%g (pixels^2)\n\ncross-sectional area=%g (mm^2)',snout_to_vent_length, line_length,area_px2, area_mm2)));
+
+
+        end
+        get_volume_measurement__step3(x,y,img, snout_to_vent_length, line_length,area_px2, area_mm2);
+    end
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    function get_volume_measurement__step3(line_x,line_y,img, snout_to_vent_length, line_length,area_px2, area_mm2)
+        function d = distance_to_line(x0,y0)
+            %cite: wikipedia/Distance_from_a_point_to_a_line
+            % "line defined by two points"
+            d = abs(...
+                (line_y(2)-line_y(1))*x0 ...
+               -(line_x(2)-line_x(1))*y0 ...
+               +line_x(2)*line_y(1) - line_y(2)*line_x(1) ...
+            )/sqrt((line_y(2)-line_y(1))^2 + (line_x(2)-line_x(1))^2);
+        end
+        %%%%%
+        function p = projection_along_line(x0,y0,d)
+            % distance_to_line^2 + projection_along_line^2 = dist(p0,p1)^2
+            p = sqrt( (line_x(1)-x0)^2 + (line_y(1)-y0)^2 - d^2 );
+        end
+        %%%%%
+        pts = [];
+        szimg = size(img);
+        for x=1:szimg(2)
+            for y=1:szimg(1)
+                %fprintf('img(%g,%g)=%g\n',y,x,img(y,x))
+                if img(y,x) > 0
+                    d = distance_to_line(x,y);
+                    p = projection_along_line(x,y,d);
+                    pts(end+1,:) = [x,y,d*(snout_to_vent_length/line_length),p*(snout_to_vent_length/line_length)];
+                end
+            end
+        end
+        
+        [~,idx4] = sort(pts(:,4));
+        [~,edges] = histcounts(pts(:,4));
+        e_ndx=1;
+        bin_max=0;
+        radius_vec = zeros(1,length(edges-1));
+        for i_ndx = 1:length(idx4)
+            if e_ndx > length(edges) || pts(idx4(i_ndx),4) > edges(e_ndx)
+                radius_vec(e_ndx) = bin_max;
+                e_ndx = e_ndx + 1;
+                bin_max = 0;
+                if e_ndx > length(edges)
+                    break
+                end
+            end
+            if bin_max < pts(idx4(i_ndx),3)
+                bin_max = pts(idx4(i_ndx),3);
+            end
+        end
+        
+        
+%         pts
+%         
+%         set(0,'DefaultFigureVisible','off');
+%         fig=figure(1);clf;set(fig,'MenuBar','none');
+%         imshow(img)
+%         screen_size = get(0,'screensize');
+%         set(fig,'Position',[1,55,screen_size(3),screen_size(4)-99])        
+%         set(fig,'Visible','on')        
+%         
+%         uiwait(msgbox(sprintf('Next')));
+            
+        set(0,'DefaultFigureVisible','off');
+        fig=figure(1);clf;set(fig,'MenuBar','none');
+        %imshow(img)
+        subplot(2,2,1)
+        plot(pts(:,1),pts(:,2),'.')
+        hold on
+        plot(line_x,line_y)
+        hold off
+        title('Tadpole position')
+        xlabel('x position (pixels)')
+        xlabel('y position (pixels)')
+        subplot(2,2,2)
+        plot(pts(:,4),pts(:,3),'.')
+        title('points transformed along line')
+        xlabel('transformed x (mm)')
+        ylabel('transformed y (mm)')
+        subplot(2,2,3)
+        %histogram(pts(:,4));
+        bar(edges,radius_vec,1.0)
+        title('radius of disc at each x-value')
+        xlabel('distance along tadpole lenght (mm)')
+        ylabel('radius of tadople (mm)')
+        screen_size = get(0,'screensize');
+        set(fig,'Position',[1,55,screen_size(3),screen_size(4)-99])        
+        set(fig,'Visible','on')
+        
+        h = edges(2)-edges(1);
+        volume_vec = h*pi*radius_vec.^2;
+        rev_volume = sum(volume_vec);
+        
+        pow_volume = area_mm2^(1.5);
+        test_str = sprintf('Volume (area^1.5 method): %g mm^3',pow_volume);
+        
+        p0 = uipanel('Position',[0.5 0.05 0.4 0.4]);%,'BorderType','none');
+        uicontrol(fig,'Parent',p0,'Style','pushbutton','String','Back to Main Screen','Position',[0 50 400 20],'Callback',@callback__calculate_tadpole_volume__reset);
+        uicontrol(fig,'Parent',p0,'Style','text','String',test_str,'Position',[0 75 400 20]);
+        uicontrol(fig,'Parent',p0,'Style','text','String',sprintf('Volume (rotation method): %g mm^3',rev_volume),'Position',[0 100 400 20]);        
+        
+        uicontrol(fig,'Parent',p0,'Style','text','String',sprintf('Snout to Vent length=%g (mm)\n\nLine length=%g (pixels)\n\ncross-sectional area=%g (pixels^2)\n\ncross-sectional area=%g (mm^2)',...
+            snout_to_vent_length, line_length,area_px2, area_mm2),'Position',[0 125 400 100]);
+        
+        % go back
+        %uiwait(msgbox(sprintf('done')));
+        %get_volume_measurement__reset()
+    end
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     function get_cropping_rect()
         set(0,'DefaultFigureVisible','off');
         fig=figure(1);clf;set(fig,'MenuBar','none');
@@ -114,8 +275,9 @@ function tadpole_activity_analysis(varargin)
     end
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                
     function draw_play_button()
-        p0 = uipanel('Position',[0.05 0.95 0.25 0.05],'BorderType','none');
+        p0 = uipanel('Position',[0.05 0.95 0.5 0.05],'BorderType','none');
         uicontrol(fig,'Parent',p0,'Style','pushbutton','String','Select New Region','Position',[0 0 200 20],'Callback',@callback__start_over_button_pushed);
+        uicontrol(fig,'Parent',p0,'Style','pushbutton','String','Calculate Tadpole Volume','Position',[220 0 200 20],'Callback',@callback__calculate_tadpole_volume);
         
         p1 = uipanel('Position',[0.05 0.465 0.35 0.05],'BorderType','none');
         uicontrol(fig,'Parent',p1,'Style','pushbutton','String','Start Processing','Position',[0 10 200 20],'Callback',@callback__play_button_pushed);
@@ -315,6 +477,14 @@ function tadpole_activity_analysis(varargin)
     function callback__start_over_button_pushed(~,~)
         processing_continue=0;
         get_cropping_rect()
+    end
+    function callback__calculate_tadpole_volume(~,~)
+        get_volume_measurement__step1();
+    end
+    function callback__calculate_tadpole_volume__reset(~,~)
+        % when done, reset
+        run_analysis__draw()
+        draw_play_button()
     end
     function callback__play_button_pushed(~,~)
         processing_continue=1;
